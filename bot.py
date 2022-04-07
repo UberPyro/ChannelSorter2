@@ -46,35 +46,42 @@ def score(arr):
     return sum(e**2 for e in arr)
 
 
-def idx_div(arr, idxs): 
-    return [sum(arr[i:j]) for i, j in zip((0,) + idxs, idxs + (len(arr),))]
+# find sums between dividers
+def sum_div(arr, dividers): 
+    start_indices = (0,) + dividers
+    end_indices = dividers + (len(arr),)
+    return [sum(arr[i:j]) for i, j in zip(start_indices, end_indices)]
+
 
 # `arr` is an array of sizes
-# `m` is the number of groups
+# `num_cats` is the number of categories
 # returns indices that divides `arr` up
 # into groups of roughly the same size
-def balance_categories(arr, m): 
-    m -= 1
-    global best
-    global top_score
-    best = (0,) * m
-    top_score = maxsize
+def balance_categories(arr, num_cats): 
+    num_divs = num_cats - 1  # number of dividers
+    data = {  # must add indirection to be writable from nested function
+        "best": (0,) * num_divs,
+        "top_score": maxsize
+    }
     arr_len = len(arr)
 
+    # `m` is the number of dividers left to place
+    # `i` is the current index at which we are looking to place a divider
+    # `cur_indices` is a partial candidate list of divisors
+    # effect: writes optimal divisors and score in `data`
+    # returns None
     def bal_cat_rec(m, i, cur_indices): 
-        global best
-        global top_score
         if m == 0: 
-            new_score = score(idx_div(arr, cur_indices))
-            if new_score < top_score: 
-                top_score = new_score
-                best = cur_indices
+            new_score = score(sum_div(arr, cur_indices))
+            if new_score < data["top_score"]: 
+                data["top_score"] = new_score
+                data["best"] = cur_indices
         else: 
             for j in range(i, arr_len): 
                 bal_cat_rec(m-1, j+1, cur_indices + (j,))
 
-    bal_cat_rec(m, 0, ())
-    return list(best)
+    bal_cat_rec(num_divs, 0, ())
+    return list(data["best"])
 
 
 @bot.command()
@@ -107,11 +114,21 @@ async def sort(ctx: discord.ext.commands.Context):
     category_channels = {}
 
     # balanced categorizer
+    # find the first letters of all the channels, then create a map
+    # of the frequencies. Isolate the frequencies, then run the balancer
+    # to get the dividers. Then produce the segments from the dividers. 
     letters = [ch.name[0].upper() for ch in channels]
-    alpha_counter = sorted(Counter("".join(letters)).items())
-    counts = list(map(lambda x: x[1], alpha_counter))
-    idxs = balance_categories(counts, len(categories))
-    for k, (i, j) in enumerate(zip([0] + idxs, idxs + [len(counts)])): 
+    letter_frequencies = sorted(Counter("".join(letters)).items())
+    counts = list(map(lambda x: x[1], letter_frequencies))
+    dividers = balance_categories(counts, len(categories))
+    segment_starts = [0] + dividers
+    segment_ends = dividers + [len(counts)]
+
+    # loop over the starting and ending indices for each segment/category, 
+    # as well as the current category index
+    for k, (i, j) in enumerate(zip(segment_starts, segment_ends)): 
+        # convert indices on segments to indices on channels
+        # by summing frequencies
         start_idx = sum(counts[:i])
         end_idx = start_idx + sum(counts[i:j])
         start_letter = letters[start_idx]
